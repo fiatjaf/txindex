@@ -1,0 +1,10 @@
+venv
+*.env
+*.pyre
+*.swo
+*.swp
+*.pyo
+*.pyc
+txtypes.cbor
+db
+.ldb_history
