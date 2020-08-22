@@ -2,6 +2,7 @@ import os
 import cbor2
 from plyvel import DB, IteratorInvalidError
 from bitcoin import BitcoinRPC
+from pprint import pprint as pp
 
 BITCOIN_RPC_ADDRESS = os.getenv("BITCOIN_RPC_ADDRESS") or "http://127.0.0.1:8443"
 BITCOIN_RPC_USER = os.getenv("BITCOIN_RPC_USER")
@@ -15,6 +16,8 @@ db = DB("db", create_if_missing=True)
 
 
 def main():
+    load_txtypes()
+
     try:
         with db.raw_iterator() as ri:
             ri.seek_to_last()
@@ -28,9 +31,11 @@ def main():
 
 
 def inspect_block(blockheight):
-    block = block = bitcoin.getblock(bitcoin.getblockhash(blockheight), 2)
+    block = bitcoin.getblock(bitcoin.getblockhash(blockheight), 2)
     blockdata = {}
     references = {blockheight: blockdata}
+
+    # gather changes
     for tx in block["tx"]:
         for vout in tx["vout"]:
             # get data for transactions in this block
@@ -38,6 +43,10 @@ def inspect_block(blockheight):
             typn = get_or_set_txtype("script_pub_key: " + template)
             blockdata.setdefault(typn, 0)
             blockdata[typn] += 1
+            if template == None or typn == None:
+                pp(tx, "vout", vout, template, typn)
+                exit()
+
         for vin in tx["vin"]:
             # get witness or p2sh data regarding previous txs in other blocks
             if (witness := vin.get("txinwitness")) and len(witness) <= 2:
@@ -46,23 +55,42 @@ def inspect_block(blockheight):
             elif (
                 "scriptSig" in vin
                 and (asm := vin["scriptSig"]["asm"])
-                and asm[0] == "0"
+                and asm[0:2] == "0 "
             ):
-                script = bitcoin.decodescript(asm.split(" ")[-1])
+                try:
+                    # p2sh is stupid and encodes the redeem-script inside the scriptSig,
+                    # so we must decode it
+                    script = bitcoin.decodescript(asm.split(" ")[-1])
+                except Exception as exc:
+                    # bitcoin core is stupid and sometimes gives us a "0 xxx..." asm
+                    # that should be actually just a normal signature + pubkey
+                    # because its decoding capabilities are crazy, that causes an error
+                    # to show here, so we just ignore these.
+                    print(exc)
+                    pp(tx)
+                    continue
                 prefix = "p2wsh"
             else:
                 continue
+
             template = templatize(script["asm"])
             typn = get_or_set_txtype(prefix + ": " + template)
             txid = vin["txid"]
-            h = bitcoin.getblock(bitcoin.getrawtransaction(txid, True), 1)["height"]
-            hdata = cbor2.loads(db.get(h.to_bytes(4, "big")))
+            blockhash = bitcoin.getrawtransaction(txid, True)["blockhash"]
+            h = bitcoin.getblock(blockhash, 1)["height"]
+            hdata = references.get(h) or cbor2.loads(db.get(h.to_bytes(4, "big")))
             references[h] = hdata
             hdata.setdefault(typn, 0)
             hdata[typn] += 1
+
+            if template == None or typn == None:
+                pp(tx, "vin", vin, template, typn)
+                exit()
+
+    # write changes
     with db.write_batch() as b:
         for blockn, value in references.items():
-            print(blockn, value)
+            print(blockn, {txtypes_rev[typn]: count for typn, count in value.items()})
             b.put(blockn.to_bytes(4, "big"), cbor2.dumps(value))
 
 
@@ -76,22 +104,28 @@ def templatize(asm):
     return " ".join(template)
 
 
-try:
-    with open("txtypes.cbor", "rb") as fp:
-        txtypes = cbor2.load(fp)
-except FileNotFoundError:
-    txtypes = {}
+def load_txtypes():
+    global txtypes, txtypes_rev
+    try:
+        with open("txtypes.cbor", "rb") as fp:
+            txtypes = cbor2.load(fp)
+    except FileNotFoundError:
+        txtypes = {}
+
+    txtypes_rev = {v: k for k, v in txtypes.items()}
 
 
 def get_or_set_txtype(template):
-    if typ := txtypes.get(template):
-        return typ
+    global txtypes, txtypes_rev
+    if typn := txtypes.get(template):
+        return typn
     else:
         typn = len(txtypes)
         txtypes[template] = typn
         with open("txtypes.cbor", "wb") as fp:
             cbor2.dump(txtypes, fp)
-        return typ
+        txtypes_rev = {v: k for k, v in txtypes.items()}
+        return typn
 
 
 try:
