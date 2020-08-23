@@ -1,7 +1,9 @@
 import os
 import cbor2
+from binascii import unhexlify
 from plyvel import DB, IteratorInvalidError
-from bitcoin import BitcoinRPC
+from bitcoin_requests import BitcoinRPC
+from bitcoin.core.script import CScript, CScriptOp
 from pprint import pprint as pp
 
 BITCOIN_RPC_ADDRESS = os.getenv("BITCOIN_RPC_ADDRESS") or "http://127.0.0.1:8443"
@@ -39,7 +41,7 @@ def inspect_block(blockheight):
     for tx in block["tx"]:
         for vout in tx["vout"]:
             # get data for transactions in this block
-            template = templatize(vout["scriptPubKey"]["asm"])
+            template = script_to_template(vout["scriptPubKey"]["hex"])
             typn = get_or_set_txtype(tx["txid"], "script_pub_key: " + template)
             blockdata.setdefault(typn, 0)
             blockdata[typn] += 1
@@ -50,31 +52,19 @@ def inspect_block(blockheight):
         for vin in tx["vin"]:
             # get witness or p2sh data regarding previous txs in other blocks
             if (witness := vin.get("txinwitness")) and len(witness) <= 2:
-                script = bitcoin.decodescript(witness[-1])
-                prefix = "p2wsh"
+                template = "p2wsh: " + script_to_template(witness[-1])
             elif (
                 "scriptSig" in vin
-                and (asm := vin["scriptSig"]["asm"])
+                and (asm := vin["scriptSig"]["hex"])
                 and asm[0:2] == "0 "
             ):
-                try:
-                    # p2sh is stupid and encodes the redeem-script inside the scriptSig,
-                    # so we must decode it
-                    script = bitcoin.decodescript(asm.split(" ")[-1])
-                except Exception as exc:
-                    # bitcoin core is stupid and sometimes gives us a "0 xxx..." asm
-                    # that should be actually just a normal signature + pubkey
-                    # because its decoding capabilities are crazy, that causes an error
-                    # to show here, so we just ignore these.
-                    print(exc)
-                    pp(tx)
-                    continue
-                prefix = "p2sh"
+                # p2sh is stupid and encodes the redeem-script inside the scriptSig,
+                # so we must decode it
+                template = "p2sh: " + script_to_template(asm.split(" ")[-1])
             else:
                 continue
 
-            template = templatize(script["asm"])
-            typn = get_or_set_txtype(tx["txid"], prefix + ": " + template)
+            typn = get_or_set_txtype(tx["txid"], template)
             txid = vin["txid"]
             blockhash = bitcoin.getrawtransaction(txid, True)["blockhash"]
             h = bitcoin.getblock(blockhash, 1)["height"]
@@ -100,14 +90,18 @@ def inspect_block(blockheight):
             b.put(blockn.to_bytes(4, "big"), cbor2.dumps(value))
 
 
-def templatize(asm):
-    template = []
-    for word in asm.split(" "):
-        if word.startswith("OP_"):
-            template.append(word)
+def script_to_template(hex_script):
+    bin_script = unhexlify(hex_script)
+    script = CScript(bin_script)
+    items = []
+    for entry in script:
+        if type(entry) == CScriptOp:
+            items.append(str(entry))
+        elif type(entry) == bytes:
+            items.append(f"<{len(entry)}>")
         else:
-            template.append(str(len(word)))
-    return " ".join(template)
+            items.append(str(entry))
+    return " ".join(items)
 
 
 def load_txtypes():
