@@ -8,3 +8,4 @@ venv
 txtypes.cbor
 db
 .ldb_history
+examples.cbor

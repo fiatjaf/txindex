@@ -40,7 +40,7 @@ def inspect_block(blockheight):
         for vout in tx["vout"]:
             # get data for transactions in this block
             template = templatize(vout["scriptPubKey"]["asm"])
-            typn = get_or_set_txtype("script_pub_key: " + template)
+            typn = get_or_set_txtype(tx["txid"], "script_pub_key: " + template)
             blockdata.setdefault(typn, 0)
             blockdata[typn] += 1
             if template == None or typn == None:
@@ -51,7 +51,7 @@ def inspect_block(blockheight):
             # get witness or p2sh data regarding previous txs in other blocks
             if (witness := vin.get("txinwitness")) and len(witness) <= 2:
                 script = bitcoin.decodescript(witness[-1])
-                prefix = "p2sh"
+                prefix = "p2wsh"
             elif (
                 "scriptSig" in vin
                 and (asm := vin["scriptSig"]["asm"])
@@ -69,12 +69,12 @@ def inspect_block(blockheight):
                     print(exc)
                     pp(tx)
                     continue
-                prefix = "p2wsh"
+                prefix = "p2sh"
             else:
                 continue
 
             template = templatize(script["asm"])
-            typn = get_or_set_txtype(prefix + ": " + template)
+            typn = get_or_set_txtype(tx["txid"], prefix + ": " + template)
             txid = vin["txid"]
             blockhash = bitcoin.getrawtransaction(txid, True)["blockhash"]
             h = bitcoin.getblock(blockhash, 1)["height"]
@@ -90,7 +90,13 @@ def inspect_block(blockheight):
     # write changes
     with db.write_batch() as b:
         for blockn, value in references.items():
-            print(blockn, {txtypes_rev[typn]: count for typn, count in value.items()})
+            print(
+                blockn,
+                {
+                    txtypes_rev[typn].replace("script_pub_key: ", ""): count
+                    for typn, count in value.items()
+                },
+            )
             b.put(blockn.to_bytes(4, "big"), cbor2.dumps(value))
 
 
@@ -105,18 +111,29 @@ def templatize(asm):
 
 
 def load_txtypes():
-    global txtypes, txtypes_rev
+    global txtypes, txtypes_rev, examples
     try:
         with open("txtypes.cbor", "rb") as fp:
             txtypes = cbor2.load(fp)
     except FileNotFoundError:
         txtypes = {}
-
     txtypes_rev = {v: k for k, v in txtypes.items()}
 
+    try:
+        with open("examples.cbor", "rb") as fp:
+            examples = cbor2.load(fp)
+    except FileNotFoundError:
+        examples = {}
 
-def get_or_set_txtype(template):
-    global txtypes, txtypes_rev
+
+def get_or_set_txtype(txid, template):
+    global txtypes, txtypes_rev, examples
+
+    if not (examples.get(template)):
+        examples[template] = txid
+        with open("examples.cbor", "wb") as fp:
+            cbor2.dump(examples, fp)
+
     if typn := txtypes.get(template):
         return typn
     else:
