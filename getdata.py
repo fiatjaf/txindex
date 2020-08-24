@@ -1,7 +1,12 @@
 import cbor2
 from plyvel import IteratorInvalidError
 from binascii import unhexlify
-from bitcoin.core.script import CScript, CScriptOp
+from bitcoin.core.script import (
+    CScript,
+    CScriptOp,
+    CScriptTruncatedPushDataError,
+    CScriptInvalidError,
+)
 from pprint import pprint as pp
 
 from globals import db, bitcoin, next_block
@@ -82,16 +87,21 @@ def inspect_block(blockheight):
 
 def script_to_template(hex_script):
     bin_script = unhexlify(hex_script)
-    script = CScript(bin_script)
-    items = []
-    for entry in script:
-        if type(entry) == CScriptOp:
-            items.append(str(entry))
-        elif type(entry) == bytes:
-            items.append(f"<{len(entry)}>")
-        else:
-            items.append(str(entry))
-    return " ".join(items)
+    try:
+        script = CScript(bin_script)
+        items = []
+        for entry in script:
+            if type(entry) == CScriptOp:
+                items.append(str(entry))
+            elif type(entry) == bytes:
+                items.append(f"<{len(entry)}>")
+            else:
+                items.append(str(entry))
+        return " ".join(items)
+    except CScriptTruncatedPushDataError:
+        return "[truncated-push-data]"
+    except CScriptInvalidError:
+        return "[invalid]"
 
 
 def load_txtypes():
