@@ -15,11 +15,11 @@ def main():
             ri.seek_to_last()
             blockheight = int.from_bytes(ri.key(), "big")
     except IteratorInvalidError:
-        blockheight = 0
+        blockheight = -1
 
     while blockheight < (next_block + 10):
-        inspect_block(blockheight)
         blockheight += 1
+        inspect_block(blockheight)
 
 
 def inspect_block(blockheight):
