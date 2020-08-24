@@ -1,20 +1,10 @@
-import os
 import cbor2
+from plyvel import IteratorInvalidError
 from binascii import unhexlify
-from plyvel import DB, IteratorInvalidError
-from bitcoin_requests import BitcoinRPC
 from bitcoin.core.script import CScript, CScriptOp
 from pprint import pprint as pp
 
-BITCOIN_RPC_ADDRESS = os.getenv("BITCOIN_RPC_ADDRESS") or "http://127.0.0.1:8443"
-BITCOIN_RPC_USER = os.getenv("BITCOIN_RPC_USER")
-BITCOIN_RPC_PASSWORD = os.getenv("BITCOIN_RPC_PASSWORD")
-
-bitcoin = BitcoinRPC(BITCOIN_RPC_ADDRESS, BITCOIN_RPC_USER, BITCOIN_RPC_PASSWORD)
-
-next_block = bitcoin.getblockchaininfo()["blocks"]
-
-db = DB("db", create_if_missing=True)
+from globals import db, bitcoin, next_block
 
 
 def main():
