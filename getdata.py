@@ -83,13 +83,7 @@ def inspect_block(blockheight):
     # write changes
     with db.write_batch() as b:
         for blockn, value in references.items():
-            print(
-                blockn,
-                {
-                    txtypes_rev[typn].replace("script_pub_key: ", ""): count
-                    for typn, count in value.items()
-                },
-            )
+            print(blockn, value)
             b.put(blockn.to_bytes(4, "big"), cbor2.dumps(value))
 
 
@@ -100,9 +94,12 @@ def script_to_template(hex_script):
         items = []
         for entry in script:
             if type(entry) == CScriptOp:
-                items.append(str(entry))
+                if str(entry).startswith("CScriptOp("):
+                    items.append(f"OP_UNKNOWN{int(entry)}")
+                else:
+                    items.append(str(entry))
             elif type(entry) == bytes:
-                items.append(f"<{len(entry)}>")
+                items.append("<data>")
             else:
                 items.append(str(entry))
         return " ".join(items)
@@ -113,13 +110,12 @@ def script_to_template(hex_script):
 
 
 def load_txtypes():
-    global txtypes, txtypes_rev, examples
+    global txtypes, examples
     try:
         with open("txtypes.cbor", "rb") as fp:
             txtypes = cbor2.load(fp)
     except FileNotFoundError:
         txtypes = {}
-    txtypes_rev = {v: k for k, v in txtypes.items()}
 
     try:
         with open("examples.cbor", "rb") as fp:
@@ -129,7 +125,7 @@ def load_txtypes():
 
 
 def get_or_set_txtype(txid, template):
-    global txtypes, txtypes_rev, examples
+    global txtypes, examples
 
     if not (examples.get(template)):
         examples[template] = txid
@@ -143,7 +139,6 @@ def get_or_set_txtype(txid, template):
         txtypes[template] = typn
         with open("txtypes.cbor", "wb") as fp:
             cbor2.dump(txtypes, fp)
-        txtypes_rev = {v: k for k, v in txtypes.items()}
         return typn
 
 
