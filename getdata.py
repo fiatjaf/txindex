@@ -1,6 +1,6 @@
 import cbor2
 from plyvel import IteratorInvalidError
-from binascii import unhexlify
+from binascii import unhexlify, Error as bError
 from bitcoin.core.script import (
     CScript,
     CScriptOp,
@@ -46,18 +46,26 @@ def inspect_block(blockheight):
 
         for vin in tx["vin"]:
             # get witness or p2sh data regarding previous txs in other blocks
-            if (witness := vin.get("txinwitness")) and len(witness) <= 2:
+            if (witness := vin.get("txinwitness")) and len(witness) > 2:
                 template = "p2wsh: " + script_to_template(witness[-1])
-            elif (
-                "scriptSig" in vin
-                and (asm := vin["scriptSig"]["hex"])
-                and asm[0:2] == "0 "
-            ):
-                # p2sh is stupid and encodes the redeem-script inside the scriptSig,
-                # so we must decode it
-                template = "p2sh: " + script_to_template(asm.split(" ")[-1])
-            else:
+            elif "coinbase" in vin:
                 continue
+            else:
+                # this may be p2sh
+                asm = vin["scriptSig"]["asm"]
+                encoded_script = asm.split(" ")[-1]
+                try:
+                    template = script_to_template(encoded_script)
+                except bError:
+                    # this is not a script and so this is not p2sh
+                    continue
+                if template[0] == "[":
+                    # raised an error, so this is probably not p2sh
+                    # we were trying to parse a signature or something
+                    # as if it was an encoded script
+                    continue
+
+                template = "p2sh: " + template
 
             typn = get_or_set_txtype(tx["txid"], template)
             txid = vin["txid"]
