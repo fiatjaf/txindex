@@ -22,14 +22,14 @@ from bitcoin.core.script import (
 )
 from naive_eval import eval_script
 
-eval_script([], CScript([]))
-print("blank is fine")
+s = eval_script([], CScript([]))
+print("blank is fine", len(s))
 
 n = CScriptOp.encode_op_pushdata(b"qowie")
-eval_script([n], CScript([n, OP_EQUALVERIFY]))
-print("equalverify is fine")
+s = eval_script([n], CScript([n, OP_EQUALVERIFY]))
+print("equalverify is fine", len(s))
 
-eval_script(
+s = eval_script(
     [
         CScriptOp.encode_op_pushdata(
             unhexlify(
@@ -48,9 +48,9 @@ eval_script(
         ]
     ),
 )
-print("checksigverify is fine")
+print("checksigverify is fine", len(s))
 
-eval_script(
+s = eval_script(
     [
         CScriptOp.encode_op_pushdata(
             unhexlify(
@@ -70,7 +70,7 @@ eval_script(
         ]
     ),
 )
-print("checksig verify is fine")
+print("checksig verify is fine", len(s))
 
 eval_script(
     [
@@ -91,9 +91,9 @@ eval_script(
         ]
     ),
 )
-print("p2pkh is fine")
+print("p2pkh is fine", len(s))
 
-eval_script(
+s = eval_script(
     [
         unhexlify(
             "304402201be07b2c2ec2355b97646ba90598a2e9c4cab113abebdf6e2c7da56266341ccc022079908afb43b348501a443368af70875bb1817abe154f5c9df39b8854172e5f7501"
@@ -104,9 +104,9 @@ eval_script(
         [OP_HASH160, unhexlify("088ba1e460e92be4f4e97fb799a5fb4085cd6bcf"), OP_EQUAL]
     ),
 )
-print("p2sh is fine")
+print("p2sh is fine", len(s))
 
-eval_script(
+s = eval_script(
     [
         0,
         unhexlify(
@@ -130,9 +130,9 @@ eval_script(
         ]
     ),
 )
-print("2-of-2 multisig is fine")
+print("2-of-2 multisig is fine", len(s))
 
-eval_script(
+s = eval_script(
     [
         0,
         unhexlify(
@@ -153,9 +153,9 @@ eval_script(
         ]
     ),
 )
-print("1-of-2 multisig is fine")
+print("1-of-2 multisig is fine", len(s))
 
-eval_script(
+s = eval_script(
     [
         0,
         unhexlify(
@@ -182,9 +182,9 @@ eval_script(
         ]
     ),
 )
-print("2-of-3 multisig is fine")
+print("2-of-3 multisig is fine", len(s))
 
-eval_script(
+s = eval_script(
     [
         unhexlify(
             "30450221009a07202a9c52ddcb4b1049e635b3cd08b0708ca5989f9e7f980455f8dcb190e20220595df5ff9db901e3e5c835fd8c94a92edf6428e15595ecd3d76a03cbebb268af01"
@@ -209,9 +209,9 @@ eval_script(
         ]
     ),
 )
-print("commitment transaction is fine with penalty")
+print("commitment transaction is fine with penalty", len(s))
 
-eval_script(
+s = eval_script(
     [
         unhexlify(
             "304402202555443258ef15982509e7280121de4965cfdcc9d87f7d0d217bb173d4879a28022003ff853cca248d9a2a41779cfc6e6c2abc587370dccdaf2072a2f9d764a37a5c01"
@@ -236,9 +236,9 @@ eval_script(
         ]
     ),
 )
-print("commitment transaction is fine without penalty")
+print("commitment transaction is fine without penalty", len(s))
 
-eval_script(
+s = eval_script(
     [
         unhexlify(
             "30450221009f119aa2a8ea840b52ef6478b8f03e17fe13caa21dcca9aa59d1f1d2d3409b410220498bcf40544093c362ffba707c557a5cdc38514840c7c6cdd76bf16ed8af01b901"
@@ -283,9 +283,9 @@ eval_script(
         ]
     ),
 )
-print("rescued htlc is fine")
+print("rescued htlc is fine", len(s))
 
-eval_script(
+s = eval_script(
     [
         0,
         unhexlify(
@@ -334,9 +334,9 @@ eval_script(
         ]
     ),
 )
-print("fulfilled htlc is fine")
+print("fulfilled htlc is fine", len(s))
 
-eval_script(
+s = eval_script(
     [
         unhexlify("00"),
         unhexlify(
@@ -382,4 +382,4 @@ eval_script(
         ]
     ),
 )
-print("other htlc is fine, not fulfilled")
+print("other htlc is fine, not fulfilled", len(s))

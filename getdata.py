@@ -10,6 +10,7 @@ from bitcoin.core.script import (
 from pprint import pprint as pp
 
 from globals import db, bitcoin, next_block
+from naive_eval import eval_script, EvalScriptError
 
 
 def main():
@@ -36,7 +37,7 @@ def inspect_block(blockheight):
     for tx in block["tx"]:
         for vout in tx["vout"]:
             # get data for transactions in this block
-            template = script_to_template(vout["scriptPubKey"]["hex"])
+            template, _ = script_to_template(vout["scriptPubKey"]["hex"])
             typn = get_or_set_txtype(tx["txid"], "script_pub_key: " + template)
             blockdata.setdefault(typn, 0)
             blockdata[typn] += 1
@@ -47,25 +48,63 @@ def inspect_block(blockheight):
         for vin in tx["vin"]:
             # get witness or p2sh data regarding previous txs in other blocks
             if (witness := vin.get("txinwitness")) and len(witness) > 2:
-                template = "p2wsh: " + script_to_template(witness[-1])
+                template, _ = script_to_template(witness[-1])
+                template = "p2wsh: " + template
             elif "coinbase" in vin:
                 continue
             else:
                 # this may be p2sh
-                asm = vin["scriptSig"]["asm"]
-                encoded_script = asm.split(" ")[-1]
+                asm = vin["scriptSig"]["asm"].split(" ")
+                encoded_script = asm[-1]
                 try:
-                    template = script_to_template(encoded_script)
+                    template, script = script_to_template(encoded_script)
                 except bError:
                     # this is not a script and so this is not p2sh
                     continue
-                if template[0] == "[":
+
+                if script == None:
                     # raised an error, so this is probably not p2sh
                     # we were trying to parse a signature or something
                     # as if it was an encoded script
                     continue
 
+                # at this point we know this is a script that is sintatically correct
+                # but to be real sure it is a p2sh we will evaluate it
+                try:
+                    remaining_stack = eval_script(
+                        [sanitize_stack_item(item) for item in asm[:-1]], script
+                    )
+                except EvalScriptError:
+                    continue
+
+                # now we will check if it ends with an opcode for checking signatures,
+                # otherwise it is probably a fake script that passed the evaluation
+                # just because it was falsely interpreted as a bunch of no-ops
+                # and data pushs -- but having a checksig indicates something
+                op = None
+                for op in script:
+                    pass
+                if not "SIG" in str(op):
+                    continue
+
+                # if there's a ton of stuff in the stack after the end then
+                # that may be a p2sh false-positive
+                if len(remaining_stack) > 2:
+                    continue
+
                 template = "p2sh: " + template
+                # check if template matches one on txtypes, that more-or-less
+                # guaratees we're in a real p2sh here
+                if typn := txtypes.get(template):
+                    pass
+                else:
+                    # otherwise we will inspect the previous tx before adding
+                    prevtx = bitcoin.getrawtransaction(vin["txid"], True)
+                    prevout = prevtx["vout"][vin["vout"]]
+                    if prevout["scriptPubKey"].get("type") == "scripthash":
+                        pass
+                    else:
+                        continue
 
             typn = get_or_set_txtype(tx["txid"], template)
             txid = vin["txid"]
@@ -88,6 +127,7 @@ def inspect_block(blockheight):
 
 
 def script_to_template(hex_script):
+    script = None
     bin_script = unhexlify(hex_script)
     try:
         script = CScript(bin_script)
@@ -102,11 +142,21 @@ def script_to_template(hex_script):
                 items.append("<data>")
             else:
                 items.append(str(entry))
-        return " ".join(items)
+        return " ".join(items), script
     except CScriptTruncatedPushDataError:
-        return "[truncated-push-data]"
+        return "[truncated-push-data]", None
     except CScriptInvalidError:
-        return "[invalid]"
+        return "[invalid]", None
+
+
+def sanitize_stack_item(item):
+    item = item.split("[")[0]
+    if len(item) <= 2:
+        try:
+            return int(item)
+        except ValueError:
+            pass
+    return unhexlify(item)
 
 
 def load_txtypes():

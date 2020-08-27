@@ -344,6 +344,10 @@ def eval_script(stack, scriptIn, debug=False):
     vfExec = []
     pbegincodehash = 0
     nOpCount = [0]
+
+    if debug:
+        print("-- start script --")
+
     for (sop, sop_data, sop_pc) in scriptIn.raw_iter():
         fExec = _CheckExec(vfExec)
 
@@ -649,6 +653,12 @@ def eval_script(stack, scriptIn, debug=False):
     # Unterminated IF/NOTIF/ELSE block
     if len(vfExec):
         raise EvalScriptError
+
+    if debug:
+        pp([s.hex() if type(s) == bytes else s for s in stack])
+        print("-- end --")
+
+    return stack
 
 
 __all__ = "eval_script"
