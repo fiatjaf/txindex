@@ -31,7 +31,6 @@ def main():
 def inspect_block(blockheight):
     block = bitcoin.getblock(bitcoin.getblockhash(blockheight), 2)
     blockdata = {}
-    references = {blockheight: blockdata}
 
     # gather changes
     for tx in block["tx"]:
@@ -72,19 +71,11 @@ def inspect_block(blockheight):
                 # but to be real sure it is a p2sh we will evaluate it
                 try:
                     remaining_stack = eval_script(
-                        [sanitize_stack_item(item) for item in asm[:-1]], script
+                        [sanitize_stack_item(item) for item in asm[:-1]], script,
                     )
-                except EvalScriptError:
+                except TypeError:
                     continue
-
-                # now we will check if it ends with an opcode for checking signatures,
-                # otherwise it is probably a fake script that passed the evaluation
-                # just because it was falsely interpreted as a bunch of no-ops
-                # and data pushs -- but having a checksig indicates something
-                op = None
-                for op in script:
-                    pass
-                if not "SIG" in str(op):
+                except EvalScriptError:
                     continue
 
                 # if there's a ton of stuff in the stack after the end then
@@ -107,23 +98,16 @@ def inspect_block(blockheight):
                         continue
 
             typn = get_or_set_txtype(tx["txid"], template)
-            txid = vin["txid"]
-            blockhash = bitcoin.getrawtransaction(txid, True)["blockhash"]
-            h = bitcoin.getblock(blockhash, 1)["height"]
-            hdata = references.get(h) or cbor2.loads(db.get(h.to_bytes(4, "big")))
-            references[h] = hdata
-            hdata.setdefault(typn, 0)
-            hdata[typn] += 1
+            blockdata.setdefault(typn, 0)
+            blockdata[typn] += 1
 
             if template == None or typn == None:
                 pp(tx, "vin", vin, template, typn)
                 exit()
 
     # write changes
-    with db.write_batch() as b:
-        for blockn, value in references.items():
-            print(blockn, value)
-            b.put(blockn.to_bytes(4, "big"), cbor2.dumps(value))
+    print(blockheight, blockdata)
+    db.put(blockheight.to_bytes(4, "big"), cbor2.dumps(blockdata))
 
 
 def script_to_template(hex_script):
@@ -151,7 +135,7 @@ def script_to_template(hex_script):
 
 def sanitize_stack_item(item):
     item = item.split("[")[0]
-    if len(item) <= 2:
+    if len(item) <= 7:
         try:
             return int(item)
         except ValueError:
